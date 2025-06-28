@@ -1,3 +1,7 @@
 # LaTeX ignores
 *.aux
 *.log
+*.out
+
+# Mac ignores
+.DS_Store
