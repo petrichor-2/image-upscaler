@@ -1,7 +1,16 @@
-# LaTeX ignores
+# LaTeX
 *.aux
 *.log
 *.out
 
-# Mac ignores
+# Mac
 .DS_Store
+
+# Virtual environment
+venv/
+
+# Python
+__pycache__/
+
+# Images
+data/chestxrays/*
