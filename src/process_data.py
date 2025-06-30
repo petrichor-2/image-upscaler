@@ -25,7 +25,7 @@ def generate_downsampled_pairs(data_dir, force_rewrite=False):
         cv2.imwrite(os.path.join(lr_folder, filename), low_res_image)
 
 def get_split_indices(data_dir, split):
-    files = os.listdir(os.path.join(data_dir, "HR_256"))
+    files = sorted(os.listdir(os.path.join(data_dir, "HR_256")))
     train_index = int(len(files) * split[0])
     val_index = int(len(files) * (split[0] + split[1]))
 
@@ -61,7 +61,7 @@ class PairDataset(torch.utils.data.Dataset):
         
         # Save filenames in list for easy access later
         # May want to sort for deterministic behavior
-        self.filenames = os.listdir(self.hr_dir)[self.start_idx:self.end_idx]
+        self.filenames = sorted(os.listdir(self.hr_dir))[self.start_idx:self.end_idx]
         
     def __len__(self):
         return self.end_idx - self.start_idx
