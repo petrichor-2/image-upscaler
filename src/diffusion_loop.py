@@ -1,5 +1,7 @@
 import torch
 import torch.nn.functional as F
+from UNetLite import UNetLite
+from torch.utils.data import DataLoader, Dataset
 
 # this will return a tensor of our betas increasing linearly for timesteps steps
 def beta_schedule(timesteps, start=0.0001, end=0.02):
@@ -42,3 +44,47 @@ def forward_diffusion_sample(hr_latent, t, device="cpu"):
     # return the noisy image and the noise
     return sqrt_alphas_bar_t.to(device) * hr_latent.to(device) + sqrt_one_minus_aplhas_bar_t.to(device) * noise.to(device) , noise.to(device)
 
+def get_loss(model, lr_latent, hr_latent, t, device="cpu"):
+    """
+    Takes a model, low resolution latent image, high resolution latent image and timestep as input
+    and returns the loss of the model
+    """
+    # get the noisy version of the high resolution latent image
+    noisy_hr_latent, noise = forward_diffusion_sample(hr_latent, t, device)
+
+    # concatenate the noisy high resolution latent image and low resolution latent image
+    # to create the input for the UNet model
+    x = torch.cat([noisy_hr_latent, lr_latent], dim=1)  # Concatenate noisy HR latent and LR latent
+    
+    # get the predicted noise from the model
+    predicted_noise = model(x, t.to(device))
+
+    # calculate the loss
+    return F.mse_loss(predicted_noise, noise.to(device))
+
+
+# training loop
+from torch.optim import Adam
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+model = UNetLite(in_channels=2 * 4, out_channels=4, time_emb_dim=256)
+model = model.to(device)
+optimizer = Adam(model.parameters(), lr=0.001)
+epochs = 100  # Try more!
+
+for epoch in range(epochs):
+    for step, batch in enumerate(dataloader):
+        optimizer.zero_grad()
+
+        # Assuming batch is a tuple: (lr_latent, hr_latent)
+        lr_latent = batch[0].to(device)
+        hr_latent = batch[1].to(device)
+        BATCH_SIZE = lr_latent.shape[0]
+
+        t = torch.randint(0, T, (BATCH_SIZE,), device=device).long()
+        loss = get_loss(model, lr_latent, hr_latent, t, device)
+        loss.backward()
+        optimizer.step()
+
+        if epoch % 5 == 0 and step == 0:
+            print(f"Epoch {epoch} | step {step:03d} Loss: {loss.item()} ")

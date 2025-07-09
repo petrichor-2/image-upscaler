@@ -25,7 +25,7 @@ class DoubleConvolution(nn.Module):
         if self.time_mlp is not None and t_emb is not None:
             time_emb = self.time_mlp(t_emb)
             # Reshape time embedding to be compatible with conv features
-            time_emb = time_emb[(..., ) + (None, ) * 2]  # Add spatial dims
+            time_emb = time_emb[(..., ) + (None, ) * 2]  # Add spatial dims to be broadcastable with image feature maps
             h = h + time_emb
             
         h = self.conv2(h)
