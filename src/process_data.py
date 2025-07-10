@@ -2,7 +2,10 @@ import os
 import cv2
 import torch
 import numpy as np
+import random
 from torchvision import transforms
+import torchvision.transforms.functional as F
+
 
 def generate_downsampled_pairs(data_dir, force_rewrite=False):
     # Make directories
@@ -39,11 +42,23 @@ def get_split_indices(data_dir, split):
     return train_index, val_index
 
 class PairDataset(torch.utils.data.Dataset):
-    def __init__(self, data_dir, type, split=[0.7, 0.2, 0.1]):
+    def __init__(self, data_dir, type, split=[0.7, 0.2, 0.1], augment=False):
         # Save directory paths
         self.data_dir = data_dir
         self.hr_dir = os.path.join(data_dir, "HR_256")
         self.lr_dir = os.path.join(data_dir, "LR_64")
+
+        # Augmentation
+        self.augment = augment
+        self.augmentor = AdvancedAugmentation() if augment else None
+
+        # Basic conversion transform
+        self.transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+        ])
+
+        self.type = type
 
         # Get indices to split at
         train_idx, val_idx = get_split_indices(data_dir, split)
@@ -80,17 +95,67 @@ class PairDataset(torch.utils.data.Dataset):
         lr_image = np.array(lr_image)
 
         # Convert images to tensor and normalize to [-1, 1]
-        hr_image = transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))(transforms.ToTensor()(hr_image))
-        lr_image = transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))(transforms.ToTensor()(lr_image))
+        hr_image = self.transform(hr_image)
+        lr_image = self.transform(lr_image)
+
+        # Apply augmentation only for training
+        if self.augment and self.type == 'train':
+            lr_image, hr_image = self.augmentor(lr_image, hr_image)
 
         # low-res as image, high-res as label
         return lr_image, hr_image
 
-def get_data_loaders(data_dir, batch_size=64, get_train=True, get_val=True, get_test=True):
+class AdvancedAugmentation:
+    def __init__(self, augment_prob=0.7):
+        self.augment_prob = augment_prob
+
+    def __call__(self, lr_img, hr_img):
+        if random.random() > self.augment_prob:
+            return lr_img, hr_img
+
+        # Random horizontal flip
+        if random.random() > 0.5:
+            lr_img = F.hflip(lr_img)
+            hr_img = F.hflip(hr_img)
+
+        # Random rotation (90° increments)
+        angle = random.choice([0, 90, 180, 270])
+        if angle != 0:
+            lr_img = F.rotate(lr_img, angle)
+            hr_img = F.rotate(hr_img, angle)
+
+        # Random crop and resize
+        if random.random() > 0.5:
+            _, h, w = lr_img.shape
+            crop_size = int(min(h, w) * 0.8)
+            i = random.randint(0, h - crop_size)
+            j = random.randint(0, w - crop_size)
+            lr_img = F.resized_crop(lr_img, i, j, crop_size, crop_size, (h, w))
+            hr_crop_size = crop_size * 4
+            hr_i, hr_j = i * 4, j * 4
+            hr_img = F.resized_crop(hr_img, hr_i, hr_j, hr_crop_size, hr_crop_size, (h*4, w*4))
+
+        # Cutout augmentation
+        if random.random() < 0.3:
+            lr_img = self._apply_cutout(lr_img)
+            hr_img = self._apply_cutout(hr_img)
+
+        return lr_img, hr_img
+
+    def _apply_cutout(self, img):
+        _, h, w = img.shape
+        cutout_size = int(min(h, w) * 0.2)
+        x = random.randint(0, w - cutout_size)
+        y = random.randint(0, h - cutout_size)
+        img = img.clone()
+        img[:, y:y+cutout_size, x:x+cutout_size] = 0
+        return img
+
+def get_data_loaders(data_dir, batch_size=64, get_train=True, get_val=True, get_test=True, augment_train=True):
     data_loaders = {}
     
     if get_train:
-        train_dataset = PairDataset(data_dir, type='train')
+        train_dataset = PairDataset(data_dir, type='train', augment=augment_train)
         data_loaders['train'] = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
     if get_val:
