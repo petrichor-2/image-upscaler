@@ -72,6 +72,12 @@ class PositionEmbeddings(nn.Module):
         embeddings = torch.cat((embeddings.sin(), embeddings.cos()), dim=-1)
         return embeddings
     
+""""
+Architecture Overview:
+- Input: Concatenated noisy HR + LR latents [batch, 8, 32, 32] + timestep [batch]
+- Output: Predicted noise [batch, 4, 32, 32]
+- Time conditioning: Sinusoidal embeddings injected at each layer
+"""
 class UNetLite(nn.Module):
     def __init__(self, in_channels, out_channels, time_emb_dim=256):
         super().__init__()

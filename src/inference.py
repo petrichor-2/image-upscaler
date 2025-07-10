@@ -25,18 +25,25 @@ def reverse_diffusion_sample(model, lr_latent, T, betas, device):
     
     # Reverse process
     for t in tqdm(reversed(range(T)), desc="Generating"):
+        # Create timestep tensor for batch since unet expects [batch_size] timesteps, one per image
         t_tensor = torch.full((lr_latent.shape[0],), t, device=device, dtype=torch.long)
         
-        # Concatenate noisy HR and LR for UNet input
+        # Concatenate noisy HR and LR for unet input
         x = torch.cat([hr_latent, lr_latent], dim=1)
         
         # Predict noise
         predicted_noise = model(x, t_tensor)
         
-        # Remove predicted noise
+        # DDPM reverse diffusion formula: removes noise incrementally, not all at once
+        # UNet predicts total accumulated noise, but we only remove the incremental portion
+        # for this timestep to maintain mathematical stability and generation quality
         hr_latent = sqrt_recip_alphas[t] * (hr_latent - betas[t] * predicted_noise / sqrt_one_minus_alphas_bar[t])
         
         # Add noise (except for last step)
+        # The og paper does this, it seems counterintuituve, because 
+        # whole point of reverse diffusion was to remove noise, so why do 
+        # we add some noise again? Stochastic mathematical stuff, but basically 
+        # leads to better results
         if t > 0:
             noise = torch.randn_like(hr_latent)
             hr_latent = hr_latent + torch.sqrt(betas[t]) * noise
@@ -59,7 +66,7 @@ def generate_super_resolution(model_path, data_dir, num_samples=4, device="cuda"
     ldsr.unet.load_state_dict(checkpoint['unet_state_dict'])
     ldsr.unet.eval()
     
-    # Load VAE if saved
+    # Load VAE if saved (ie if we are not using pretrained vae since it doesnt load)
     if 'vae_state_dict' in checkpoint:
         ldsr.vae.load_state_dict(checkpoint['vae_state_dict'])
     

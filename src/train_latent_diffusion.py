@@ -150,7 +150,9 @@ class LatentDiffusionSuperResolution:
     VAE: (batch, 3, 256, 256) -> (batch, 4, 32, 32) -> (batch, 3, 256, 256)
     8x spatial reduction, 3->4->3 channels
     """
-    
+    """
+    But then isnt the unet predicting how much noise to remove at once relative to the t, and not sequentially remove the t because it never learns that? 
+    """
     def forward_diffusion_sample(self, hr_latent, t):
         """Add noise to HR latent"""
         noise = torch.randn_like(hr_latent)
@@ -175,6 +177,7 @@ class LatentDiffusionSuperResolution:
         x = torch.cat([noisy_hr_latent, lr_latent], dim=1)
         
         # Predict noise
+        # Note, unet is designed to handle batchess
         predicted_noise = self.unet(x, t)
         
         # MSE loss between predicted and actual noise
@@ -191,7 +194,7 @@ class LatentDiffusionSuperResolution:
         lr_latents = self.encode_images(lr_images_resized)
         hr_latents = self.encode_images(hr_images)
         
-        # Random timesteps
+        # Random timesteps (generates random ints between the range)
         t = torch.randint(0, self.T, (batch_size,), device=self.device).long()
         
         # Calculate loss
@@ -206,7 +209,7 @@ class LatentDiffusionSuperResolution:
     
     def validate(self):
         """Validation step"""
-        self.unet.eval()
+        self.unet.eval() #set to eval mode 
         total_loss = 0
         num_batches = 0
         
@@ -228,7 +231,7 @@ class LatentDiffusionSuperResolution:
                 total_loss += loss.item()
                 num_batches += 1
         
-        self.unet.train()
+        self.unet.train() #set back to train mode 
         return total_loss / num_batches if num_batches > 0 else 0
     
     def train(self, epochs=100, save_every=10, validate_every=5):
@@ -255,10 +258,11 @@ class LatentDiffusionSuperResolution:
                 
                 progress_bar.set_postfix({'loss': f'{loss:.4f}'})
             
+            #since recall get_loss() gets the per batch loss 
             avg_train_loss = epoch_loss / num_batches
             train_losses.append(avg_train_loss)
             
-            # Validation
+            # validation
             if (epoch + 1) % validate_every == 0:
                 val_loss = self.validate()
                 val_losses.append(val_loss)
