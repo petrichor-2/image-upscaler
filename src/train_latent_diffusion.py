@@ -1,6 +1,5 @@
 """
-Complete training script for latent diffusion super-resolution model
-Integrates VAE, UNet, dataloader, and training loop
+Training script for latent diffusion super-resolution
 """
 
 import torch
@@ -29,7 +28,7 @@ except ImportError:
     print("Diffusers not available, using simple VAE")
 
 class SimpleVAE(nn.Module):
-    """Simple VAE for latent diffusion if diffusers is not available"""
+    """Simple VAE if diffusers not available"""
     def __init__(self, in_channels=3, latent_dim=4):
         super().__init__()
         
@@ -65,7 +64,7 @@ class SimpleVAE(nn.Module):
         return self.decoder(z)
 
 class LatentDiffusionSuperResolution:
-    """Main class that orchestrates the latent diffusion super-resolution training"""
+    """Main training class"""
     
     def __init__(self, data_dir, device="cuda", use_pretrained_vae=True):
         self.device = device
@@ -94,19 +93,19 @@ class LatentDiffusionSuperResolution:
             get_test=False
         )
         
-        print(f"✓ Initialized on {device}")
-        print(f"✓ Train samples: {len(self.data_loaders['train'].dataset)}")
-        print(f"✓ Val samples: {len(self.data_loaders['val'].dataset)}")
+        print(f"Initialized on {device}")
+        print(f"Train samples: {len(self.data_loaders['train'].dataset)}")
+        print(f"Val samples: {len(self.data_loaders['val'].dataset)}")
     
     def setup_vae(self, use_pretrained_vae):
-        """Setup VAE encoder/decoder"""
+        """Setup VAE"""
         if use_pretrained_vae and DIFFUSERS_AVAILABLE:
             try:
                 print("Loading pretrained VAE...")
                 vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-mse")
                 vae = vae.to(self.device)
-                vae.eval()  # Set to eval mode
-                print("✓ Loaded pretrained VAE")
+                vae.eval()
+                print("Loaded pretrained VAE")
                 return vae
             except Exception as e:
                 print(f"Failed to load pretrained VAE: {e}")
@@ -117,7 +116,7 @@ class LatentDiffusionSuperResolution:
         return vae
     
     def setup_diffusion_constants(self):
-        """Setup diffusion schedule constants"""
+        """Setup diffusion constants"""
         alphas = 1. - self.betas
         self.alphas_bar = torch.cumprod(alphas, axis=0)
         self.sqrt_alphas_bar = torch.sqrt(self.alphas_bar)
@@ -128,13 +127,8 @@ class LatentDiffusionSuperResolution:
         with torch.no_grad():
             if hasattr(self.vae, 'encode'):
                 # Diffusers VAE
-                # Diffusers VAE (AutoencoderKL):
-                # Input: images (batch, 3, 256, 256) - RGB images in range [0,1] or [-1,1]
-                # .encode() returns object with .latent_dist attribute (probability distribution)
-                # .sample() draws one sample from the Gaussian distribution in latent space
-                # Output: latents (batch, 4, 32, 32) - 4-channel latents at 1/8 spatial resolution
                 latents = self.vae.encode(images).latent_dist.sample()
-                latents = latents * 0.18215  # Scaling factor for stable diffusion VAE
+                latents = latents * 0.18215  # Scaling factor
             else:
                 # Simple VAE
                 latents = self.vae.encode(images)
@@ -153,13 +147,12 @@ class LatentDiffusionSuperResolution:
         return images
     
     """
-    VAE Dimension Flow: Input images (batch, 3, H, W) → Encoder → Latents (batch, 4, H/8, W/8) 
-    → Decoder → Output images (batch, 3, H, W). Spatial dims are flexible (multiples of 32 preferred), 
-    but channels are fixed: 3→4→3. Batch size is preserved throughout.
+    VAE: (batch, 3, 256, 256) -> (batch, 4, 32, 32) -> (batch, 3, 256, 256)
+    8x spatial reduction, 3->4->3 channels
     """
     
     def forward_diffusion_sample(self, hr_latent, t):
-        """Add noise to HR latent according to diffusion schedule"""
+        """Add noise to HR latent"""
         noise = torch.randn_like(hr_latent)
         sqrt_alphas_bar_t = extract_timestep_coefficients(
             self.sqrt_alphas_bar, t, hr_latent.shape
@@ -174,7 +167,7 @@ class LatentDiffusionSuperResolution:
         return noisy_latent, noise.to(self.device)
     
     def get_loss(self, lr_latent, hr_latent, t):
-        """Calculate diffusion loss"""
+        """Calculate loss"""
         # Add noise to HR latent
         noisy_hr_latent, noise = self.forward_diffusion_sample(hr_latent, t)
         
@@ -191,21 +184,20 @@ class LatentDiffusionSuperResolution:
         """Single training step"""
         batch_size = lr_images.shape[0]
         
-        # Resize LR images to match HR size before encoding
-        # This ensures both will have the same latent spatial dimensions
+        # Resize LR to match HR size before encoding  
         lr_images_resized = F.interpolate(lr_images, size=(256, 256), mode='bicubic', align_corners=False)
         
-        # Encode images to latent space
-        lr_latents = self.encode_images(lr_images_resized)  # Now will be (batch, 4, 32, 32)
-        hr_latents = self.encode_images(hr_images)          # Also (batch, 4, 32, 32)
+        # Encode to latent space
+        lr_latents = self.encode_images(lr_images_resized)
+        hr_latents = self.encode_images(hr_images)
         
-        # Sample random timesteps
+        # Random timesteps
         t = torch.randint(0, self.T, (batch_size,), device=self.device).long()
         
         # Calculate loss
         loss = self.get_loss(lr_latents, hr_latents, t)
         
-        # Backpropagate
+        # Backprop
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
@@ -223,7 +215,7 @@ class LatentDiffusionSuperResolution:
                 lr_images = lr_images.to(self.device)
                 hr_images = hr_images.to(self.device)
                 
-                # Resize LR images to match HR size before encoding
+                # Resize LR to match HR size
                 lr_images_resized = F.interpolate(lr_images, size=(256, 256), mode='bicubic', align_corners=False)
                 
                 batch_size = lr_images.shape[0]

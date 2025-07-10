@@ -63,10 +63,10 @@ def download_data(num_batches, dst_folder, force_redownload=False):
                         
                         # Remove the archive after extraction
                         os.remove(archive_path)
-                        print(f"✓ Extracted and removed {archive}")
+                        print(f"Extracted and removed {archive}")
                         
                     except Exception as e:
-                        print(f"❌ Error extracting {archive}: {e}")
+                        print(f"Error extracting {archive}: {e}")
                         corrupted_files.append(archive)
                         
                         # Ask if user wants to delete corrupted file and re-download
@@ -74,13 +74,13 @@ def download_data(num_batches, dst_folder, force_redownload=False):
                         if delete_input == 'y':
                             try:
                                 os.remove(archive_path)
-                                print(f"✓ Deleted corrupted {archive}")
+                                print(f"Deleted corrupted {archive}")
                             except:
-                                print(f"❌ Could not delete {archive}")
+                                print(f"Could not delete {archive}")
                 
                 # Count final images
                 final_images = [f for f in os.listdir(dst_folder) if f.lower().endswith('.png')]
-                print(f"✓ Extraction complete. Total images: {len(final_images)}")
+                print(f"Extraction complete. Total images: {len(final_images)}")
                 
                 # If we have corrupted files, offer to re-download
                 if corrupted_files:
@@ -121,11 +121,11 @@ def download_data(num_batches, dst_folder, force_redownload=False):
             
             urllib.request.urlretrieve(link, fn, reporthook=progress_callback)
             print()  # New line after progress
-            print(f'✓ Download completed. Extracting...')
+            print(f'Download completed. Extracting...')
             
             with tarfile.open(fn, 'r:gz') as tar:
                 tar.extractall(path=dst_folder)
-            print(f'✓ Extraction completed.')
+            print(f'Extraction completed.')
             
             os.remove(fn)  # remove the zip
             
@@ -145,10 +145,10 @@ def download_data(num_batches, dst_folder, force_redownload=False):
                 f.write(f'Downloaded on {os.path.getctime(dst_folder)}\n')
             
             downloaded_count += 1
-            print(f'✓ Batch {idx+1} downloaded and extracted successfully')
+            print(f'Batch {idx+1} downloaded and extracted successfully')
             
         except Exception as e:
-            print(f'❌ Error downloading batch {idx+1}: {e}')
+            print(f'Error downloading batch {idx+1}: {e}')
             # Clean up partial downloads
             if os.path.exists(fn):
                 os.remove(fn)

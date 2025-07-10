@@ -1,5 +1,5 @@
 """
-Inference script for the trained latent diffusion super-resolution model
+Inference script for trained model
 """
 
 import torch
@@ -13,14 +13,11 @@ from process_data import get_data_loaders
 from train_latent_diffusion import LatentDiffusionSuperResolution
 
 def reverse_diffusion_sample(model, lr_latent, T, betas, device):
-    """
-    Reverse diffusion process to generate HR from LR
-    Starts from pure noise and denoises step by step
-    """
-    # Start from pure noise
+    """Reverse diffusion to generate HR from LR"""
+    # Start from noise
     hr_latent = torch.randn_like(lr_latent)
     
-    # Precompute constants
+    # Constants
     alphas = 1. - betas
     alphas_bar = torch.cumprod(alphas, dim=0)
     sqrt_recip_alphas = torch.sqrt(1.0 / alphas)
