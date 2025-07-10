@@ -25,7 +25,7 @@ betas = beta_schedule(timesteps=T)
 
 # Calculate different parts of the equations
 alphas = 1. - betas
-alphas_bar = torch.cumprod(alphas, axis=0)
+alphas_bar = torch.cumprod(alphas, dim=0)
 alphas_bar_prev = F.pad(alphas_bar[:-1], (1,0), value=1.0)
 sqrt_recip_alphas = torch.sqrt(1.0/ alphas)
 sqrt_alphas_bar = torch.sqrt(alphas_bar)
@@ -66,25 +66,34 @@ def get_loss(model, lr_latent, hr_latent, t, device="cpu"):
 # training loop
 from torch.optim import Adam
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
-model = UNetLite(in_channels=2 * 4, out_channels=4, time_emb_dim=256)
-model = model.to(device)
-optimizer = Adam(model.parameters(), lr=0.001)
-epochs = 100  # Try more!
+def train_basic_diffusion(dataloader, epochs=100):
+    """
+    Basic training loop for diffusion model
+    This is a simple example - use train_latent_diffusion.py for the full pipeline
+    """
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = UNetLite(in_channels=2 * 4, out_channels=4, time_emb_dim=256)
+    model = model.to(device)
+    optimizer = Adam(model.parameters(), lr=0.001)
 
-for epoch in range(epochs):
-    for step, batch in enumerate(dataloader):
-        optimizer.zero_grad()
+    for epoch in range(epochs):
+        for step, batch in enumerate(dataloader):
+            optimizer.zero_grad()
 
-        # Assuming batch is a tuple: (lr_latent, hr_latent)
-        lr_latent = batch[0].to(device)
-        hr_latent = batch[1].to(device)
-        BATCH_SIZE = lr_latent.shape[0]
+            # Assuming batch is a tuple: (lr_latent, hr_latent)
+            lr_latent = batch[0].to(device)
+            hr_latent = batch[1].to(device)
+            BATCH_SIZE = lr_latent.shape[0]
 
-        t = torch.randint(0, T, (BATCH_SIZE,), device=device).long()
-        loss = get_loss(model, lr_latent, hr_latent, t, device)
-        loss.backward()
-        optimizer.step()
+            t = torch.randint(0, T, (BATCH_SIZE,), device=device).long()
+            loss = get_loss(model, lr_latent, hr_latent, t, device)
+            loss.backward()
+            optimizer.step()
 
-        if epoch % 5 == 0 and step == 0:
-            print(f"Epoch {epoch} | step {step:03d} Loss: {loss.item()} ")
+            if epoch % 5 == 0 and step == 0:
+                print(f"Epoch {epoch} | step {step:03d} Loss: {loss.item()} ")
+
+if __name__ == "__main__":
+    # Example usage - only runs when script is executed directly
+    print("This is a module with diffusion functions.")
+    print("Use train_latent_diffusion.py for the complete training pipeline.")
