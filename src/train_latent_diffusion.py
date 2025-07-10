@@ -90,7 +90,8 @@ class LatentDiffusionSuperResolution:
             batch_size=4,  # Start small for testing
             get_train=True, 
             get_val=True, 
-            get_test=False
+            get_test=False,
+            augment_train=True
         )
         
         print(f"Initialized on {device}")
