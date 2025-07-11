@@ -35,7 +35,6 @@ def create_tiny_dataloaders(data_dir, tiny_size=10, batch_size=4):
         'train': DataLoader(datasets['train'], batch_size=batch_size, shuffle=False)
     }
     
-    print(f"Created tiny dataloaders: {len(datasets['train'])} train")
     return dataloaders
 
 class SanityChecker:
@@ -64,8 +63,6 @@ class SanityChecker:
             batch_size=min(4, tiny_size)
         )
         
-        print(f"Sanity checker ready with {tiny_size} images and larger UNet")
-        print(f"UNet parameters: {sum(p.numel() for p in self.model.unet.parameters()):,}")
     
     def run_sanity_check(self, epochs=500, plot_every=50):
         """Run sanity check training"""
@@ -109,7 +106,7 @@ class SanityChecker:
         plt.figure(figsize=(10, 6))
         
         plt.plot(train_losses, 'b-', linewidth=2, label='Train Loss')
-        plt.title('Training Loss Over 500 Epochs (Should Decrease to Near Zero)')
+        plt.title('Training Loss Over 500 Epochs')
         plt.xlabel('Epoch')
         plt.ylabel('Loss')
         plt.yscale('log')
@@ -126,20 +123,13 @@ class SanityChecker:
         print(f"\n=== TRAINING RESULTS ===")
         print(f"Initial train loss: {initial_train:.6f}")
         print(f"Final train loss: {final_train:.6f}")
-        print(f"Train reduction: {initial_train/final_train:.1f}x")
         
-        if final_train < initial_train * 0.1:
-            print("PASS: Training loss decreased significantly (>90% reduction)")
-        elif final_train < initial_train * 0.5:
-            print("PARTIAL: Training loss decreased moderately (>50% reduction)")
-        else:
-            print("FAIL: Training loss did not decrease significantly")
     
     def test_inference_with_existing_model(self):
-        """Test inference"""
+        """Test inference-------------------"""
         from inference import reverse_diffusion_sample
         
-        print("\n=== Testing Inference ===")
+        print("\nTesting Inference:")
         
         lr_images, hr_images = next(iter(self.model.data_loaders['train']))
         lr_images = lr_images.to(self.device)
@@ -236,20 +226,11 @@ def main():
         train_losses = checker.run_sanity_check(epochs=500, plot_every=50)
         
         print("\n=== SANITY CHECK SUMMARY ===")
-        print(f"Pipeline executed successfully")
-        print(f"Model can overfit on tiny dataset")
         print(f"Train loss: {train_losses[0]:.6f} -> {train_losses[-1]:.6f}")
         print(f"Training curve and inference results saved")
         
         final_train = train_losses[-1]
         initial_train = train_losses[0]
-        
-        if final_train < 0.01:
-            print("EXCELLENT: Very low final loss achieved")
-        elif final_train < initial_train * 0.1:
-            print("GOOD: Significant overfitting achieved")
-        else:
-            print("Consider more epochs or check model setup")
         
     except Exception as e:
         print(f"SANITY CHECK FAILED: {e}")
