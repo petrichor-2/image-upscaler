@@ -66,7 +66,7 @@ class SimpleVAE(nn.Module):
 class LatentDiffusionSuperResolution:
     """Main training class"""
     
-    def __init__(self, data_dir, device="cuda", use_pretrained_vae=True):
+    def __init__(self, data_dir, device="cuda", use_pretrained_vae=True, unet_time_emb_dim=256, **kwargs):
         self.device = device
         self.data_dir = data_dir
         
@@ -79,7 +79,7 @@ class LatentDiffusionSuperResolution:
         self.vae = self.setup_vae(use_pretrained_vae)
         
         # Initialize UNet (input: 8 channels = 4 for noisy HR + 4 for LR condition)
-        self.unet = UNetLite(in_channels=8, out_channels=4, time_emb_dim=256).to(device)
+        self.unet = UNetLite(in_channels=8, out_channels=4, time_emb_dim=unet_time_emb_dim).to(device)
         
         # Setup optimizer
         self.optimizer = Adam(self.unet.parameters(), lr=1e-4)

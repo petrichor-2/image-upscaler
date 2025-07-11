@@ -79,7 +79,7 @@ Architecture Overview:
 - Time conditioning: Sinusoidal embeddings injected at each layer
 """
 class UNetLite(nn.Module):
-    def __init__(self, in_channels, out_channels, time_emb_dim=256):
+    def __init__(self, in_channels, out_channels, time_emb_dim=256, base_channels=32):
         super().__init__()
         
         # Time embedding
@@ -91,15 +91,17 @@ class UNetLite(nn.Module):
         )
         
         # Note: in_channels is now 2 * latent_dim due to concatenated HR and LR latents
-        self.downBlock1 = DownSample(in_channels, 32, time_emb_dim)
-        self.downBlock2 = DownSample(32, 64, time_emb_dim)
+        self.downBlock1 = DownSample(in_channels, base_channels, time_emb_dim)
+        self.downBlock2 = DownSample(base_channels, base_channels*2, time_emb_dim)
+        self.downBlock3 = DownSample(base_channels*2, base_channels*4, time_emb_dim)
 
-        self.bottleNeck = DoubleConvolution(64, 128, time_emb_dim)
+        self.bottleNeck = DoubleConvolution(base_channels*4, base_channels*8, time_emb_dim)
 
-        self.upBlock1 = UpSample(128, 64, time_emb_dim)
-        self.upBlock2 = UpSample(64, 32, time_emb_dim)
+        self.upBlock1 = UpSample(base_channels*8, base_channels*4, time_emb_dim)
+        self.upBlock2 = UpSample(base_channels*4, base_channels*2, time_emb_dim)
+        self.upBlock3 = UpSample(base_channels*2, base_channels, time_emb_dim)
 
-        self.out = nn.Conv2d(32, out_channels, kernel_size=1)
+        self.out = nn.Conv2d(base_channels, out_channels, kernel_size=1)
     
     def forward(self, x, timestep):
         # Get time embeddings
@@ -108,10 +110,12 @@ class UNetLite(nn.Module):
         # Forward pass with time embeddings
         conv1, pool1 = self.downBlock1(x, t_emb)
         conv2, pool2 = self.downBlock2(pool1, t_emb)
+        conv3, pool3 = self.downBlock3(pool2, t_emb)
 
-        bottle_neck = self.bottleNeck(pool2, t_emb)
+        bottle_neck = self.bottleNeck(pool3, t_emb)
 
-        up1 = self.upBlock1(bottle_neck, conv2, t_emb)
-        up2 = self.upBlock2(up1, conv1, t_emb)
+        up1 = self.upBlock1(bottle_neck, conv3, t_emb)
+        up2 = self.upBlock2(up1, conv2, t_emb)
+        up3 = self.upBlock3(up2, conv1, t_emb)
 
-        return self.out(up2)
+        return self.out(up3)

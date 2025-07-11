@@ -49,8 +49,14 @@ class SanityChecker:
         self.model = LatentDiffusionSuperResolution(
             data_dir=data_dir,
             device=device,
-            use_pretrained_vae=True
+            use_pretrained_vae=True,
+            unet_time_emb_dim=512  # Larger time embedding dimension for bigger UNet
         )
+        
+        # Replace UNet with larger version
+        from UNetLite import UNetLite
+        self.model.unet = UNetLite(in_channels=8, out_channels=4, time_emb_dim=512, base_channels=64).to(device)
+        self.model.optimizer = torch.optim.Adam(self.model.unet.parameters(), lr=1e-3)
         
         self.model.data_loaders = create_tiny_dataloaders(
             data_dir, 
@@ -58,15 +64,15 @@ class SanityChecker:
             batch_size=min(4, tiny_size)
         )
         
-        # Higher learning rate for faster overfitting
-        self.model.optimizer.param_groups[0]['lr'] = 1e-3
-        
-        print(f"Sanity checker ready with {tiny_size} images")
+        print(f"Sanity checker ready with {tiny_size} images and larger UNet")
+        print(f"UNet parameters: {sum(p.numel() for p in self.model.unet.parameters()):,}")
     
-    def run_sanity_check(self, epochs=30, plot_every=5):
+    def run_sanity_check(self, epochs=500, plot_every=50):
         """Run sanity check training"""
         print(f"\n=== SANITY CHECK: Overfitting on tiny dataset ===")
         print(f"Train samples: {len(self.model.data_loaders['train'].dataset)}")
+        print(f"Epochs: {epochs}")
+        print(f"Learning rate: {self.model.optimizer.param_groups[0]['lr']}")
         
         train_losses = []
         
@@ -74,8 +80,8 @@ class SanityChecker:
             epoch_loss = 0
             num_batches = 0
             
-            # Train on same batch multiple times per epoch
-            for repeat in range(5):
+            # Train on same batch multiple times per epoch for faster overfitting
+            for repeat in range(3):  # Reduced from 5 to speed up with more epochs
                 for lr_images, hr_images in self.model.data_loaders['train']:
                     lr_images = lr_images.to(self.device)
                     hr_images = hr_images.to(self.device)
@@ -87,7 +93,7 @@ class SanityChecker:
             avg_train_loss = epoch_loss / num_batches
             train_losses.append(avg_train_loss)
             
-            if epoch % plot_every == 0:
+            if epoch % plot_every == 0 or epoch < 10:
                 print(f"Epoch {epoch:3d}: Train = {avg_train_loss:.6f}")
         
         print(f"\nFinal train loss: {train_losses[-1]:.6f}")
@@ -103,7 +109,7 @@ class SanityChecker:
         plt.figure(figsize=(10, 6))
         
         plt.plot(train_losses, 'b-', linewidth=2, label='Train Loss')
-        plt.title('Training Loss (Should Decrease to Near Zero)')
+        plt.title('Training Loss Over 500 Epochs (Should Decrease to Near Zero)')
         plt.xlabel('Epoch')
         plt.ylabel('Loss')
         plt.yscale('log')
