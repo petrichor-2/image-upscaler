@@ -233,7 +233,7 @@ def main():
     checker = SanityChecker(data_dir, device=device, tiny_size=10)
     
     try:
-        train_losses = checker.run_sanity_check(epochs=20, plot_every=5)
+        train_losses = checker.run_sanity_check(epochs=500, plot_every=50)
         
         print("\n=== SANITY CHECK SUMMARY ===")
         print(f"Pipeline executed successfully")
