@@ -66,7 +66,7 @@ class SimpleVAE(nn.Module):
 class LatentDiffusionSuperResolution:
     """Main training class"""
     
-    def __init__(self, data_dir, device="cuda", use_pretrained_vae=True, unet_time_emb_dim=256, **kwargs):
+    def __init__(self, data_dir, device="cuda", use_pretrained_vae=True, unet_time_emb_dim=256, unet_base_channels=32, **kwargs):
         self.device = device
         self.data_dir = data_dir
         
@@ -79,7 +79,7 @@ class LatentDiffusionSuperResolution:
         self.vae = self.setup_vae(use_pretrained_vae)
         
         # Initialize UNet (input: 8 channels = 4 for noisy HR + 4 for LR condition)
-        self.unet = UNetLite(in_channels=8, out_channels=4, time_emb_dim=unet_time_emb_dim).to(device)
+        self.unet = UNetLite(in_channels=8, out_channels=4, time_emb_dim=unet_time_emb_dim, base_channels=unet_base_channels).to(device)
         
         # Setup optimizer
         self.optimizer = Adam(self.unet.parameters(), lr=1e-4)
@@ -329,15 +329,23 @@ def main():
         print(f"Directory not found: {data_dir}")
         return
     
+    # Choose UNet size
+    use_large_unet = input("Use larger UNet? (y/n, default=n): ").strip().lower()
+    unet_base_channels = 64 if use_large_unet == 'y' else 32
+    unet_size_name = "large" if use_large_unet == 'y' else "standard"
+    
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
+    print(f"UNet size: {unet_size_name} (base_channels={unet_base_channels})")
     
     # Initialize model
     model = LatentDiffusionSuperResolution(
         data_dir=data_dir,
         device=device,
-        use_pretrained_vae=True
+        use_pretrained_vae=True,
+        unet_base_channels=unet_base_channels
     )
+    
     
     # Train
     train_losses, val_losses = model.train(
