@@ -12,6 +12,21 @@ from UNetLite import UNetLite
 from process_data import get_data_loaders
 from train_latent_diffusion import LatentDiffusionSuperResolution
 
+def calculate_psnr(img1, img2, max_value=1.0):
+    """
+    Calculate PSNR between two images
+    Args:
+        img1, img2: Tensor images in range [0, 1]
+        max_value: Maximum possible pixel value (1.0 for normalized images)
+    Returns:
+        PSNR value in dB
+    """
+    mse = torch.mean((img1 - img2) ** 2)
+    if mse == 0:
+        return 100  # Perfect match
+    psnr = 20 * torch.log10(max_value / torch.sqrt(mse))
+    return psnr.item()
+
 def reverse_diffusion_sample(model, lr_latent, T, betas, device):
     """Reverse diffusion to generate HR from LR"""
     # Start from noise
@@ -99,7 +114,7 @@ def generate_super_resolution(model_path, data_dir, num_samples=4, device="cuda"
 
 def visualize_results(lr_images, hr_images, generated_images, bicubic_images, num_samples):
     """
-    Visualize super-resolution results
+    Visualize super-resolution results with PSNR calculations
     """
     def tensor_to_numpy(tensor):
         """Convert tensor to numpy for visualization"""
@@ -108,33 +123,55 @@ def visualize_results(lr_images, hr_images, generated_images, bicubic_images, nu
         tensor = torch.clamp(tensor, 0, 1)
         return tensor.permute(0, 2, 3, 1).numpy()
     
+    # Convert for visualization
     lr_np = tensor_to_numpy(lr_images)
     hr_np = tensor_to_numpy(hr_images)
     generated_np = tensor_to_numpy(generated_images)
     bicubic_np = tensor_to_numpy(bicubic_images)
     
+    # Convert for PSNR calculation (keep as tensors, normalized to [0,1])
+    hr_norm = torch.clamp((hr_images + 1) / 2, 0, 1)
+    gen_norm = torch.clamp((generated_images + 1) / 2, 0, 1)
+    bicubic_norm = torch.clamp((bicubic_images + 1) / 2, 0, 1)
+    
     fig, axes = plt.subplots(4, num_samples, figsize=(4*num_samples, 16))
     
+    # Calculate and print PSNR values
+    print("\n=== PSNR Results ===")
+    bicubic_psnrs = []
+    diffusion_psnrs = []
+    
     for i in range(num_samples):
-        # LR image
+        # Calculate PSNR for each image
+        bicubic_psnr = calculate_psnr(bicubic_norm[i], hr_norm[i])
+        diffusion_psnr = calculate_psnr(gen_norm[i], hr_norm[i])
+        
+        bicubic_psnrs.append(bicubic_psnr)
+        diffusion_psnrs.append(diffusion_psnr)
+        
+        print(f"Image {i+1}: Bicubic = {bicubic_psnr:.2f} dB, Diffusion = {diffusion_psnr:.2f} dB")
+        
+        # Plot images with PSNR in titles
         axes[0, i].imshow(lr_np[i], cmap='gray' if lr_np[i].shape[-1] == 1 else None)
         axes[0, i].set_title(f'LR Input (64x64)')
         axes[0, i].axis('off')
         
-        # Bicubic upsampling
         axes[1, i].imshow(bicubic_np[i], cmap='gray' if bicubic_np[i].shape[-1] == 1 else None)
-        axes[1, i].set_title(f'Bicubic Upsampling')
+        axes[1, i].set_title(f'Bicubic Upsampling\nPSNR: {bicubic_psnr:.2f} dB')
         axes[1, i].axis('off')
         
-        # Generated HR
         axes[2, i].imshow(generated_np[i], cmap='gray' if generated_np[i].shape[-1] == 1 else None)
-        axes[2, i].set_title(f'Generated HR (Diffusion)')
+        axes[2, i].set_title(f'Generated HR (Diffusion)\nPSNR: {diffusion_psnr:.2f} dB')
         axes[2, i].axis('off')
         
-        # Ground truth HR
         axes[3, i].imshow(hr_np[i], cmap='gray' if hr_np[i].shape[-1] == 1 else None)
         axes[3, i].set_title(f'Ground Truth HR (256x256)')
         axes[3, i].axis('off')
+    
+    # Print average PSNR
+    avg_bicubic = np.mean(bicubic_psnrs)
+    avg_diffusion = np.mean(diffusion_psnrs)
+    print(f"\nAverage PSNR - Bicubic: {avg_bicubic:.2f} dB, Diffusion: {avg_diffusion:.2f} dB")
     
     plt.tight_layout()
     plt.savefig('super_resolution_results.png', dpi=150, bbox_inches='tight')

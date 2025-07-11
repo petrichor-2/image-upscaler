@@ -14,6 +14,21 @@ from train_latent_diffusion import LatentDiffusionSuperResolution
 from process_data import get_data_loaders
 from pakhi_data import PairDataset
 
+def calculate_psnr(img1, img2, max_value=1.0):
+    """
+    Calculate PSNR between two images
+    Args:
+        img1, img2: Tensor images in range [0, 1]
+        max_value: Maximum possible pixel value (1.0 for normalized images)
+    Returns:
+        PSNR value in dB
+    """
+    mse = torch.mean((img1 - img2) ** 2)
+    if mse == 0:
+        return 100  # Perfect match
+    psnr = 20 * torch.log10(max_value / torch.sqrt(mse))
+    return psnr.item()
+
 class TinyDataset(PairDataset):
     """Dataset limited to small number of images for overfitting test"""
     def __init__(self, data_dir, max_images=10, **kwargs):
@@ -163,37 +178,64 @@ class SanityChecker:
         self.visualize_inference_results(lr_sample, hr_sample, generated_hr_images, bicubic_hr)
     
     def visualize_inference_results(self, lr_images, hr_images, generated_images, bicubic_images):
-        """Visualize inference results"""
+        """Visualize inference results with PSNR calculations"""
         def tensor_to_numpy(tensor):
             tensor = tensor.cpu()
             tensor = torch.clamp((tensor + 1) / 2, 0, 1)
             return tensor.permute(0, 2, 3, 1).numpy()
         
+        # Convert for visualization
         lr_np = tensor_to_numpy(lr_images)
         hr_np = tensor_to_numpy(hr_images)
         gen_np = tensor_to_numpy(generated_images)
         bicubic_np = tensor_to_numpy(bicubic_images)
         
+        # Convert for PSNR calculation (keep as tensors, normalized to [0,1])
+        hr_norm = torch.clamp((hr_images + 1) / 2, 0, 1)
+        gen_norm = torch.clamp((generated_images + 1) / 2, 0, 1)
+        bicubic_norm = torch.clamp((bicubic_images + 1) / 2, 0, 1)
+        
         num_samples = lr_images.shape[0]
         
         fig, axes = plt.subplots(4, num_samples, figsize=(4*num_samples, 16))
         
+        # Calculate and print PSNR values
+        print("\n=== PSNR Results ===")
+        bicubic_psnrs = []
+        diffusion_psnrs = []
+        
         for i in range(num_samples):
+            # Calculate PSNR for each image
+            bicubic_psnr = calculate_psnr(bicubic_norm[i], hr_norm[i])
+            diffusion_psnr = calculate_psnr(gen_norm[i], hr_norm[i])
+            
+            bicubic_psnrs.append(bicubic_psnr)
+            diffusion_psnrs.append(diffusion_psnr)
+            
+            print(f"Image {i+1}: Bicubic = {bicubic_psnr:.2f} dB, Diffusion = {diffusion_psnr:.2f} dB")
+            
+            # Plot images with PSNR in titles
             axes[0, i].imshow(lr_np[i])
             axes[0, i].set_title(f'LR Input #{i+1} (64x64)')
             axes[0, i].axis('off')
             
             axes[1, i].imshow(bicubic_np[i])
-            axes[1, i].set_title(f'Bicubic Upsampling #{i+1}')
+            axes[1, i].set_title(f'Bicubic #{i+1}\nPSNR: {bicubic_psnr:.2f} dB')
             axes[1, i].axis('off')
             
             axes[2, i].imshow(gen_np[i])
-            axes[2, i].set_title(f'Generated HR #{i+1} (Diffusion)')
+            axes[2, i].set_title(f'Diffusion #{i+1}\nPSNR: {diffusion_psnr:.2f} dB')
             axes[2, i].axis('off')
             
             axes[3, i].imshow(hr_np[i])
-            axes[3, i].set_title(f'Ground Truth HR #{i+1}')
+            axes[3, i].set_title(f'Ground Truth #{i+1}')
             axes[3, i].axis('off')
+        
+        # Print average PSNR
+        avg_bicubic = np.mean(bicubic_psnrs)
+        avg_diffusion = np.mean(diffusion_psnrs)
+        print(f"\nAverage PSNR - Bicubic: {avg_bicubic:.2f} dB, Diffusion: {avg_diffusion:.2f} dB")
+        print(f"Improvement: {avg_diffusion - avg_bicubic:.2f} dB")
         
         plt.tight_layout()
         plt.savefig('sanity_check_inference_results.png', dpi=150, bbox_inches='tight')
