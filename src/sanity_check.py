@@ -5,14 +5,14 @@ Sanity check script: Overfit on tiny dataset to verify pipeline works
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from tqdm import tqdm
+# from tqdm import tqdm
 import os
 from torch.utils.data import DataLoader
 
 # Import existing modules
 from train_latent_diffusion import LatentDiffusionSuperResolution
 from process_data import get_data_loaders
-from pakhi_data import PairDataset
+from process_data import PairDataset
 
 class TinyDataset(PairDataset):
     """Dataset limited to small number of images for overfitting test"""
@@ -20,15 +20,18 @@ class TinyDataset(PairDataset):
         super().__init__(data_dir, **kwargs)
         self.filenames = self.filenames[:max_images]
         print(f"Sanity check: Using only {len(self.filenames)} images")
+    def __len__(self):
+        """Return the number of images in the tiny dataset"""
+        return len(self.filenames)
 
 def create_tiny_dataloaders(data_dir, tiny_size=10, batch_size=4):
     """Create dataloaders with small dataset"""
-    from pakhi_data import generate_downsampled_pairs
+    from process_data import generate_downsampled_pairs
     
     generate_downsampled_pairs(data_dir)
     
     datasets = {
-        'train': TinyDataset(data_dir, max_images=tiny_size, mode='train', augment=False)
+        'train': TinyDataset(data_dir, max_images=tiny_size, type='train', augment=False)
     }
     
     dataloaders = {
@@ -218,7 +221,7 @@ def main():
     lr_dir = os.path.join(data_dir, "LR_64")
     
     if not os.path.exists(hr_dir) or not os.path.exists(lr_dir):
-        print("HR_256 and LR_64 folders not found. Run process_data.py first!")
+        print("HR_256 and LR_64 folders not found. Run generate_downsampled_pairs first!")
         return
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
