@@ -108,7 +108,7 @@ def test_setup(data_dir):
     
     try:
         from process_data import get_data_loaders
-        data_loaders = get_data_loaders(data_dir, batch_size=2, get_test=False)
+        data_loaders = get_data_loaders(data_dir, batch_size=2, get_test=False, augment_train=True)
         
         train_loader = data_loaders['train']
         val_loader = data_loaders['val']
