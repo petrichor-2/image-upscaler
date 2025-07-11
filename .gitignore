@@ -1,3 +1,5 @@
+
+
 # LaTeX
 *.aux
 *.log
@@ -12,5 +14,20 @@ venv/
 # Python
 __pycache__/
 
-# Images
-data/chestxrays/*
+# Images and data directories
+data/
+src/data/
+*.png
+*.jpg
+*.jpeg
+*.tiff
+*.bmp
+*.gif
+
+# Model checkpoints and outputs
+*.pt
+*.pth
+*.ckpt
+models/
+checkpoints/
+outputs/
