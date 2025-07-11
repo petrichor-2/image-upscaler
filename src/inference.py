@@ -6,11 +6,33 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 import matplotlib.pyplot as plt
+import math
 from tqdm import tqdm
+from skimage.metrics import structural_similarity as ssim
 
 from UNetLite import UNetLite
 from process_data import get_data_loaders
 from train_latent_diffusion import LatentDiffusionSuperResolution
+
+def compute_psnr(img1, img2):
+    """Compute PSNR between two images (expects uint8 numpy arrays)"""
+    mse = ((img1 - img2) ** 2).mean()
+    if mse == 0:
+        return float('inf')
+    return 20 * math.log10(255.0 / math.sqrt(mse))
+
+def compute_ssim(img1, img2):
+    """Compute SSIM between two images (expects uint8 numpy arrays of HxWxC)"""
+    return ssim(img1, img2, channel_axis=2, data_range=255)
+
+def tensor_to_uint8_numpy(tensor):
+    """Convert tensor to uint8 numpy for metric calculation"""
+    tensor = tensor.cpu()
+    tensor = (tensor + 1) / 2  # Denormalize from [-1,1] to [0,1]
+    tensor = torch.clamp(tensor, 0, 1)
+    tensor = tensor.permute(0, 2, 3, 1)  # BCHW -> BHWC
+    numpy_img = (tensor.numpy() * 255).astype(np.uint8)
+    return numpy_img
 
 def reverse_diffusion_sample(model, lr_latent, T, betas, device):
     """Reverse diffusion to generate HR from LR"""
@@ -94,12 +116,12 @@ def generate_super_resolution(model_path, data_dir, num_samples=4, device="cuda"
         # Also get bicubic upsampling for comparison
         lr_upsampled = F.interpolate(lr_images, size=(256, 256), mode='bicubic', align_corners=False)
     
-    # Visualize results
-    visualize_results(lr_images, hr_images, generated_hr_images, lr_upsampled, num_samples)
+    # Visualize results with metrics
+    visualize_results_with_metrics(lr_images, hr_images, generated_hr_images, lr_upsampled, num_samples)
 
-def visualize_results(lr_images, hr_images, generated_images, bicubic_images, num_samples):
+def visualize_results_with_metrics(lr_images, hr_images, generated_images, bicubic_images, num_samples):
     """
-    Visualize super-resolution results
+    Visualize super-resolution results with PSNR and SSIM metrics
     """
     def tensor_to_numpy(tensor):
         """Convert tensor to numpy for visualization"""
@@ -108,33 +130,74 @@ def visualize_results(lr_images, hr_images, generated_images, bicubic_images, nu
         tensor = torch.clamp(tensor, 0, 1)
         return tensor.permute(0, 2, 3, 1).numpy()
     
+    # Convert tensors to numpy arrays for visualization
     lr_np = tensor_to_numpy(lr_images)
     hr_np = tensor_to_numpy(hr_images)
     generated_np = tensor_to_numpy(generated_images)
     bicubic_np = tensor_to_numpy(bicubic_images)
     
+    # Convert to uint8 for metric calculations
+    hr_uint8 = tensor_to_uint8_numpy(hr_images)
+    generated_uint8 = tensor_to_uint8_numpy(generated_images)
+    bicubic_uint8 = tensor_to_uint8_numpy(bicubic_images)
+    
     fig, axes = plt.subplots(4, num_samples, figsize=(4*num_samples, 16))
     
+    # Track metrics for averaging
+    bicubic_psnr_values = []
+    bicubic_ssim_values = []
+    diffusion_psnr_values = []
+    diffusion_ssim_values = []
+    
     for i in range(num_samples):
+        # Calculate metrics for this sample
+        bicubic_psnr = compute_psnr(bicubic_uint8[i], hr_uint8[i])
+        bicubic_ssim = compute_ssim(bicubic_uint8[i], hr_uint8[i])
+        diffusion_psnr = compute_psnr(generated_uint8[i], hr_uint8[i])
+        diffusion_ssim = compute_ssim(generated_uint8[i], hr_uint8[i])
+        
+        # Store for averaging
+        bicubic_psnr_values.append(bicubic_psnr)
+        bicubic_ssim_values.append(bicubic_ssim)
+        diffusion_psnr_values.append(diffusion_psnr)
+        diffusion_ssim_values.append(diffusion_ssim)
+        
+        # Print metrics for this sample
+        print(f"\nSample {i+1}:")
+        print(f"  Bicubic  - PSNR: {bicubic_psnr:.2f} dB, SSIM: {bicubic_ssim:.4f}")
+        print(f"  Diffusion - PSNR: {diffusion_psnr:.2f} dB, SSIM: {diffusion_ssim:.4f}")
+        
         # LR image
         axes[0, i].imshow(lr_np[i], cmap='gray' if lr_np[i].shape[-1] == 1 else None)
         axes[0, i].set_title(f'LR Input (64x64)')
         axes[0, i].axis('off')
         
-        # Bicubic upsampling
+        # Bicubic upsampling with metrics
         axes[1, i].imshow(bicubic_np[i], cmap='gray' if bicubic_np[i].shape[-1] == 1 else None)
-        axes[1, i].set_title(f'Bicubic Upsampling')
+        axes[1, i].set_title(f'Bicubic\nPSNR: {bicubic_psnr:.2f} dB\nSSIM: {bicubic_ssim:.3f}')
         axes[1, i].axis('off')
         
-        # Generated HR
+        # Generated HR with metrics
         axes[2, i].imshow(generated_np[i], cmap='gray' if generated_np[i].shape[-1] == 1 else None)
-        axes[2, i].set_title(f'Generated HR (Diffusion)')
+        axes[2, i].set_title(f'Diffusion\nPSNR: {diffusion_psnr:.2f} dB\nSSIM: {diffusion_ssim:.3f}')
         axes[2, i].axis('off')
         
         # Ground truth HR
         axes[3, i].imshow(hr_np[i], cmap='gray' if hr_np[i].shape[-1] == 1 else None)
         axes[3, i].set_title(f'Ground Truth HR (256x256)')
         axes[3, i].axis('off')
+    
+    # Print average metrics
+    avg_bicubic_psnr = np.mean(bicubic_psnr_values)
+    avg_bicubic_ssim = np.mean(bicubic_ssim_values)
+    avg_diffusion_psnr = np.mean(diffusion_psnr_values)
+    avg_diffusion_ssim = np.mean(diffusion_ssim_values)
+    
+    print(f"\n{'='*50}")
+    print("AVERAGE METRICS:")
+    print(f"  Bicubic  - PSNR: {avg_bicubic_psnr:.2f} dB, SSIM: {avg_bicubic_ssim:.4f}")
+    print(f"  Diffusion - PSNR: {avg_diffusion_psnr:.2f} dB, SSIM: {avg_diffusion_ssim:.4f}")
+    print(f"{'='*50}")
     
     plt.tight_layout()
     plt.savefig('super_resolution_results.png', dpi=150, bbox_inches='tight')
