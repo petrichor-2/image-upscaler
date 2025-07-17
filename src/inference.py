@@ -76,8 +76,24 @@ def generate_super_resolution(model_path, data_dir, num_samples=4, device="cuda"
     T = checkpoint['T']
     betas = checkpoint['betas']
     
-    # Initialize model
-    ldsr = LatentDiffusionSuperResolution(data_dir, device, use_pretrained_vae=True)
+    # Detect model size from checkpoint
+    unet_base_channels = 32  # default
+    if 'unet_state_dict' in checkpoint:
+        # Check the first layer to determine model size
+        first_layer_weight = checkpoint['unet_state_dict']['downBlock1.conv.conv1.weight']
+        if first_layer_weight.shape[0] == 64:  # Large model
+            unet_base_channels = 64
+            print("Detected large UNet model (base_channels=64)")
+        else:
+            print("Detected standard UNet model (base_channels=32)")
+    
+    # Initialize model with correct size
+    ldsr = LatentDiffusionSuperResolution(
+        data_dir, 
+        device, 
+        use_pretrained_vae=True,
+        unet_base_channels=unet_base_channels
+    )
     ldsr.unet.load_state_dict(checkpoint['unet_state_dict'])
     ldsr.unet.eval()
     
