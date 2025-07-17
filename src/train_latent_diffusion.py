@@ -43,15 +43,15 @@ class SimpleVAE(nn.Module):
             nn.Conv2d(128, latent_dim, 1),       # 32->32, reduce channels
         )
         
-        # Decoder: 32x32x4 -> 256x256
+        # Decoder: 32x32x4 -> 256x256x3
         self.decoder = nn.Sequential(
-            nn.Conv2d(latent_dim, 128, 1),       # Keep 32x32, expand channels
+            nn.Conv2d(latent_dim, 128, 1),       # Keep 32x32, expand channels to 128
             nn.ReLU(),
-            nn.ConvTranspose2d(128, 64, 4, 2, 1), # 32->64
+            nn.ConvTranspose2d(128, 64, 4, 2, 1), # 32->64 (with 128->64 channels)
             nn.ReLU(),
-            nn.ConvTranspose2d(64, 32, 4, 2, 1),  # 64->128
+            nn.ConvTranspose2d(64, 32, 4, 2, 1),  # 64->128 (with 64->32 channels)
             nn.ReLU(),
-            nn.ConvTranspose2d(32, in_channels, 4, 2, 1), # 128->256
+            nn.ConvTranspose2d(32, in_channels, 4, 2, 1), # 128->256 (with 32->3 channels)
             nn.Tanh()  # Output in [-1, 1] range
         )
     
@@ -61,7 +61,10 @@ class SimpleVAE(nn.Module):
     
     def decode(self, z):
         """Decode latent to image"""
-        return self.decoder(z)
+        print(f"SimpleVAE decode: Input shape {z.shape}")
+        output = self.decoder(z)
+        print(f"SimpleVAE decode: Output shape {output.shape}")
+        return output
 
 class LatentDiffusionSuperResolution:
     """Main training class"""
@@ -114,6 +117,9 @@ class LatentDiffusionSuperResolution:
         
         print("Using simple VAE")
         vae = SimpleVAE().to(self.device)
+        print(f"SimpleVAE decoder architecture:")
+        for i, layer in enumerate(vae.decoder):
+            print(f"  Layer {i}: {layer}")
         return vae
     
     def setup_diffusion_constants(self):
@@ -137,14 +143,18 @@ class LatentDiffusionSuperResolution:
     
     def decode_latents(self, latents):
         """Decode latents to images using VAE"""
+        print(f"decode_latents: Input latents shape: {latents.shape}")
         with torch.no_grad():
             if hasattr(self.vae, 'decode'):
                 # Diffusers VAE
+                print("Using diffusers VAE decode")
                 latents = latents / 0.18215
                 images = self.vae.decode(latents).sample
             else:
                 # Simple VAE
+                print("Using simple VAE decode")
                 images = self.vae.decode(latents)
+        print(f"decode_latents: Output images shape: {images.shape}")
         return images
     
     """

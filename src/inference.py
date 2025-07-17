@@ -122,6 +122,22 @@ def generate_super_resolution(model_path, data_dir, num_samples=4, device="cuda"
         # Decode to images
         generated_hr_images = ldsr.decode_latents(generated_hr_latents)
         
+        # Debug: Print shapes to identify issues
+        print(f"Debug - LR images shape: {lr_images.shape}")
+        print(f"Debug - HR images shape: {hr_images.shape}")
+        print(f"Debug - Generated HR images shape: {generated_hr_images.shape}")
+        
+        # Fix size mismatch if generated images are wrong size
+        if generated_hr_images.shape[-2:] != hr_images.shape[-2:]:
+            print(f"Size mismatch detected! Resizing generated images from {generated_hr_images.shape[-2:]} to {hr_images.shape[-2:]}")
+            generated_hr_images = F.interpolate(
+                generated_hr_images, 
+                size=hr_images.shape[-2:], 
+                mode='bilinear', 
+                align_corners=False
+            )
+            print(f"After resize - Generated HR images shape: {generated_hr_images.shape}")
+        
         # Also get bicubic upsampling for comparison
         lr_upsampled = F.interpolate(lr_images, size=(256, 256), mode='bicubic', align_corners=False)
     
