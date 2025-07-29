@@ -112,7 +112,14 @@ def generate_super_resolution(model_path, data_dir, num_samples=4, device="cuda"
     
     with torch.no_grad():
         # Encode LR images
-        lr_latents = ldsr.encode_images(lr_images)
+        # 1) upsample LR (64x64) to 256x256 to match training
+        lr_images_resized = F.interpolate(lr_images, size=(256, 256), mode='bicubic', align_corners=False)
+
+        # 2) encode to latents -> (B,4,32,32)
+        lr_latents = ldsr.encode_images(lr_images_resized)
+
+        # (optional) sanity check
+        assert lr_latents.shape[-2:] == (32, 32), f"Expected 32x32 latents, got {lr_latents.shape[-2:]}"
         
         # Generate HR latents using reverse diffusion
         generated_hr_latents = reverse_diffusion_sample(
