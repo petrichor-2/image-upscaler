@@ -87,19 +87,20 @@ class LatentDiffusionSuperResolution:
         # Setup optimizer
         self.optimizer = Adam(self.unet.parameters(), lr=1e-4)
         
-        # Setup data loaders
-        self.data_loaders = get_data_loaders(
-            data_dir, 
-            batch_size=4,  # Start small for testing
-            get_train=True, 
-            get_val=True, 
-            get_test=False,
-            augment_train=True
-        )
-        
-        print(f"Initialized on {device}")
-        print(f"Train samples: {len(self.data_loaders['train'].dataset)}")
-        print(f"Val samples: {len(self.data_loaders['val'].dataset)}")
+        if data_dir != "None":
+            # Setup data loaders
+            self.data_loaders = get_data_loaders(
+                data_dir, 
+                batch_size=4,  # Start small for testing
+                get_train=True, 
+                get_val=True, 
+                get_test=False,
+                augment_train=True
+            )
+            
+            print(f"Initialized on {device}")
+            print(f"Train samples: {len(self.data_loaders['train'].dataset)}")
+            print(f"Val samples: {len(self.data_loaders['val'].dataset)}")
     
     def setup_vae(self, use_pretrained_vae):
         """Setup VAE"""

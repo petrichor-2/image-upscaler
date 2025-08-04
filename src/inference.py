@@ -5,12 +5,18 @@ Inference script for trained model
 import torch
 import torch.nn.functional as F
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 from UNetLite import UNetLite
 from process_data import get_data_loaders
 from train_latent_diffusion import LatentDiffusionSuperResolution
+from PIL import Image
+import time
+
+from run_trt import TRTUNet
 
 def calculate_psnr(img1, img2, max_value=1.0):
     """
@@ -65,17 +71,58 @@ def reverse_diffusion_sample(model, lr_latent, T, betas, device):
     
     return hr_latent
 
-def generate_super_resolution(model_path, data_dir, num_samples=4, device="cuda"):
+def reverse_diffusion_sample_trt(model_path, lr_latent, T, betas, device):
+    """Reverse diffusion to generate HR from LR using the TRT model"""
+    model = TRTUNet(engine_path=model_path)  # Load TRT model
+
+    # Start from noise
+    hr_latent = torch.randn_like(lr_latent)
+    
+    # Constants
+    alphas = 1. - betas
+    alphas_bar = torch.cumprod(alphas, dim=0)
+    sqrt_recip_alphas = torch.sqrt(1.0 / alphas)
+    sqrt_one_minus_alphas_bar = torch.sqrt(1 - alphas_bar)
+    
+    # Reverse process
+    for t in tqdm(reversed(range(T)), desc="Generating"):
+        # Create timestep tensor for batch since unet expects [batch_size] timesteps, one per image
+        t_tensor = torch.full((lr_latent.shape[0],), t, device=device, dtype=torch.long)
+        
+        # Concatenate noisy HR and LR for unet input
+        x = torch.cat([hr_latent, lr_latent], dim=1)
+        
+        # Predict noise
+        predicted_noise = model.infer(x, t_tensor, device)
+        
+        # DDPM reverse diffusion formula: removes noise incrementally, not all at once
+        # UNet predicts total accumulated noise, but we only remove the incremental portion
+        # for this timestep to maintain mathematical stability and generation quality
+        hr_latent = sqrt_recip_alphas[t] * (hr_latent - betas[t] * predicted_noise / sqrt_one_minus_alphas_bar[t])
+        
+        # Add noise (except for last step)
+        # The og paper does this, it seems counterintuituve, because 
+        # whole point of reverse diffusion was to remove noise, so why do 
+        # we add some noise again? Stochastic mathematical stuff, but basically 
+        # leads to better results
+        if t > 0:
+            noise = torch.randn_like(hr_latent)
+            hr_latent = hr_latent + torch.sqrt(betas[t]) * noise
+    
+    return hr_latent
+
+def generate_super_resolution(model_path, data_dir, trt_path="None", use_trt=False, num_samples=4, device="cuda"):
     """
     Generate super-resolution images using trained model
     """
     print(f"Loading model from {model_path}")
     
+
     # Load checkpoint
     checkpoint = torch.load(model_path, map_location=device)
     T = checkpoint['T']
     betas = checkpoint['betas']
-    
+
     # Detect model size from checkpoint
     unet_base_channels = 32  # default
     if 'unet_state_dict' in checkpoint:
@@ -86,27 +133,47 @@ def generate_super_resolution(model_path, data_dir, num_samples=4, device="cuda"
             print("Detected large UNet model (base_channels=64)")
         else:
             print("Detected standard UNet model (base_channels=32)")
-    
-    # Initialize model with correct size
-    ldsr = LatentDiffusionSuperResolution(
-        data_dir, 
-        device, 
-        use_pretrained_vae=True,
-        unet_base_channels=unet_base_channels
-    )
-    ldsr.unet.load_state_dict(checkpoint['unet_state_dict'])
-    ldsr.unet.eval()
+
+        # Initialize model with correct size
+        ldsr = LatentDiffusionSuperResolution(
+            data_dir, 
+            device, 
+            use_pretrained_vae=True,
+            unet_base_channels=unet_base_channels
+        )
+        ldsr.unet.load_state_dict(checkpoint['unet_state_dict'])
+        ldsr.unet.eval()
     
     # Load VAE if saved (ie if we are not using pretrained vae since it doesnt load)
     if 'vae_state_dict' in checkpoint:
         ldsr.vae.load_state_dict(checkpoint['vae_state_dict'])
     
-    # Get some test samples
-    test_loader = get_data_loaders(data_dir, batch_size=num_samples, get_train=False, get_val=False, get_test=True)['test']
-    lr_images, hr_images = next(iter(test_loader))
-    
-    lr_images = lr_images.to(device)
-    hr_images = hr_images.to(device)
+    if data_dir == "None":
+        # Load specific LR and HR images
+        hr_image_path = "/home/nazmus/Desktop/EdgeDiff SR/image-upscaler/src/Data/HR_256/00000001_000 (1).png"
+        lr_image_path = "/home/nazmus/Desktop/EdgeDiff SR/image-upscaler/src/Data/LR_64/00000001_000.png"
+
+        # Open and convert to RGB
+        lr_image = Image.open(lr_image_path).convert("RGB")
+        hr_image = Image.open(hr_image_path).convert("RGB")
+
+        # Transform to tensor and normalize to [-1, 1]
+        import torchvision.transforms as transforms
+        transform = transforms.Compose([
+            transforms.ToTensor(),  # [0,1]
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])  # [0,1] -> [-1,1]
+        ])
+
+        lr_images = transform(lr_image).unsqueeze(0).to(device)
+        hr_images = transform(hr_image).unsqueeze(0).to(device)
+  
+    else:
+        # Get some test samples
+        test_loader = get_data_loaders(data_dir, batch_size=num_samples, get_train=False, get_val=False, get_test=True)['test']
+        lr_images, hr_images = next(iter(test_loader))
+        
+        lr_images = lr_images.to(device)
+        hr_images = hr_images.to(device)
     
     print("Generating super-resolution images...")
     
@@ -120,11 +187,27 @@ def generate_super_resolution(model_path, data_dir, num_samples=4, device="cuda"
 
         # (optional) sanity check
         assert lr_latents.shape[-2:] == (32, 32), f"Expected 32x32 latents, got {lr_latents.shape[-2:]}"
+
+
         
-        # Generate HR latents using reverse diffusion
-        generated_hr_latents = reverse_diffusion_sample(
-            ldsr.unet, lr_latents, T, betas, device
-        )
+
+        if use_trt:
+            start_time = time.time()
+            # Generate HR latents using reverse diffusion with TRT model
+            generated_hr_latents = reverse_diffusion_sample_trt(
+                trt_path, lr_latents, T, betas, device
+            )
+            end_time = time.time()
+            print(f"TRT UNet: Generated HR latents in {end_time - start_time:.2f} seconds")
+        else:
+            start_time = time.time()
+            # Generate HR latents using reverse diffusion
+            generated_hr_latents = reverse_diffusion_sample(
+                ldsr.unet, lr_latents, T, betas, device
+            )
+            end_time = time.time()
+            print(f"Standard UNet: Generated HR latents in {end_time - start_time:.2f} seconds")
+        
         
         # Decode to images
         generated_hr_images = ldsr.decode_latents(generated_hr_latents)
@@ -148,6 +231,10 @@ def generate_super_resolution(model_path, data_dir, num_samples=4, device="cuda"
         # Also get bicubic upsampling for comparison
         lr_upsampled = F.interpolate(lr_images, size=(256, 256), mode='bicubic', align_corners=False)
     
+    
+    elapsed = end_time - start_time
+    print(f"Time taken to generate {num_samples} image(s): {elapsed:.2f} seconds")
+
     # Visualize results
     visualize_results(lr_images, hr_images, generated_hr_images, lr_upsampled, num_samples)
 
@@ -174,6 +261,8 @@ def visualize_results(lr_images, hr_images, generated_images, bicubic_images, nu
     bicubic_norm = torch.clamp((bicubic_images + 1) / 2, 0, 1)
     
     fig, axes = plt.subplots(4, num_samples, figsize=(4*num_samples, 16))
+    if num_samples == 1:
+        axes = axes.reshape(4, 1)
     
     # Calculate and print PSNR values
     print("\n=== PSNR Results ===")
@@ -220,11 +309,12 @@ def main():
     """Main inference function"""
     model_path = input("Enter path to trained model (.pt file): ").strip()
     data_dir = input("Enter path to data directory: ").strip()
-    
+    trt_path = input("Enter path to TensorRT engine (.trt file) or 'None' if not using TRT: ").strip()
+    use_trt = trt_path.lower() != "none"
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
     
-    generate_super_resolution(model_path, data_dir, num_samples=4, device=device)
+    generate_super_resolution(model_path, data_dir, trt_path, use_trt, num_samples=1, device=device)
 
 if __name__ == "__main__":
     main()
