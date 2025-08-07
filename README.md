@@ -1,10 +1,10 @@
-# 🩻 Latent Diffusion for Chest X-Ray Super-Resolution
+# Latent Diffusion for Chest X-Ray Super-Resolution
 
 This project implements a **Latent Diffusion Model (LDM)** pipeline to perform **4× super-resolution** on chest X-ray images. We learn to recover high-resolution (HR) images from noisy latent representations using a **UNet-based denoiser** conditioned on low-resolution (LR) latents and timestep embeddings.
 
 ---
 
-## 📁 Dataset
+## Dataset
 
 We use the **NIH ChestX-ray14** dataset, containing over 100,000 frontal-view radiographs.  
 For training, we preprocess and randomly sample **10,000 paired images**, resizing:
@@ -18,21 +18,21 @@ Then the forward diffusion process begins.
 
 ---
 
-## 🧠 Model Architecture
+## Model Architecture
 
 Our LDM pipeline consists of three main components:
 
-### 1. 📦 Variational Autoencoder (VAE)
+### 1. Variational Autoencoder (VAE)
 - Pretrained AutoencoderKL encodes RGB images to latent space (`3×256×256 → 4×32×32`) and decodes back.
 - Used to encode both LR and HR inputs during training, and decode outputs during inference.
 
-### 2. 🔄 Forward Diffusion
+### 2. Forward Diffusion
 - Noise is added to the **HR latent** over `T=300` steps using a **beta schedule** from the DDPM paper.
 - Closed-form sampling is used to directly obtain `z_t` from `z_0` and timestep `t`.
 - LR latent is **not noised** and is used as a conditional input.
 - Timesteps are sampled uniformly and used to condition the model via **sinusoidal embeddings**.
 
-### 3. 🧩 UNet Denoiser
+### 3. UNet Denoiser
 - Lightweight encoder-decoder UNet with skip connections.
 - Takes as input:  
   `concat([noisy HR latent, clean LR latent]) → [8×32×32]`  
@@ -42,7 +42,7 @@ Our LDM pipeline consists of three main components:
 
 ---
 
-## 🚀 Inference (Reverse Diffusion)
+## Inference (Reverse Diffusion)
 
 - Start from pure noise `z_T ∼ N(0, I)` in HR latent space.
 - At each step `t ∈ [T, ..., 0]`:
@@ -52,7 +52,7 @@ Our LDM pipeline consists of three main components:
 
 ---
 
-## 📈 Evaluation
+## Evaluation
 
 - Super-resolved images are compared to ground-truth HR images.
 - **Peak Signal-to-Noise Ratio (PSNR)** and **Structural Similarity Index (SSIM)** are used as evaluation metrics.
@@ -60,33 +60,33 @@ Our LDM pipeline consists of three main components:
 
 ---
 
-## ⚡ Edge Deployment with TensorRT
+## Edge Deployment with TensorRT
 
 To optimize for fast deployment on NVIDIA GPUs:
 
-- ✅ Exported the trained UNet model to **ONNX** format (`.onnx`)
-- ✅ Converted ONNX to a **TensorRT engine** (`.trt`) for runtime execution
-- ✅ Implemented CUDA-based inference pipeline using **PyCUDA + TensorRT**
-- ✅ Achieved **~3.8× faster inference** with negligible quality loss (lower precision enabled by TRT)
-- ✅ Integrated into main inference pipeline with seamless fallback between PyTorch and TensorRT
+- Exported the trained UNet model to **ONNX** format (`.onnx`)
+- Converted ONNX to a **TensorRT engine** (`.trt`) for runtime execution
+- Implemented CUDA-based inference pipeline using **PyCUDA + TensorRT**
+- Achieved **~3.8× faster inference** with negligible quality loss (lower precision enabled by TRT)
+- Integrated into main inference pipeline with seamless fallback between PyTorch and TensorRT
 
 ---
 
-## ✅ Project Status
+## Project Status
 
-- ✅ VAE integration for image ↔ latent mapping  
-- ✅ Forward diffusion process (closed-form)  
-- ✅ Custom UNet with LR + timestep conditioning  
-- ✅ Training loop (PyTorch)  
-- ✅ Reverse diffusion and inference sampling  
-- ✅ Evaluation (PSNR, SSIM)  
-- ✅ ONNX export and TensorRT deployment  
-- ✅ End-to-end super-resolution working on GPU  
-- ✅ Modular PyTorch & TensorRT inference wrappers
+- VAE integration for image ↔ latent mapping  
+- Forward diffusion process (closed-form)  
+- Custom UNet with LR + timestep conditioning  
+- Training loop (PyTorch)  
+- Reverse diffusion and inference sampling  
+- Evaluation (PSNR, SSIM)  
+- ONNX export and TensorRT deployment  
+- End-to-end super-resolution working on GPU  
+- Modular PyTorch & TensorRT inference wrappers
 
 ---
 
-## 🛠️ Dependencies
+## Dependencies
 
 - Python 3.8+
 - PyTorch ≥ 1.13  
@@ -97,7 +97,7 @@ To optimize for fast deployment on NVIDIA GPUs:
 
 ---
 
-## 📚 References
+## References
 
 - **Denoising Diffusion Probabilistic Models**  
   [https://arxiv.org/abs/2006.11239](https://arxiv.org/abs/2006.11239)
