@@ -9,6 +9,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+from skimage.metrics import structural_similarity as ssim
 
 from UNetLite import UNetLite
 from process_data import get_data_loaders
@@ -32,6 +33,29 @@ def calculate_psnr(img1, img2, max_value=1.0):
         return 100  # Perfect match
     psnr = 20 * torch.log10(max_value / torch.sqrt(mse))
     return psnr.item()
+
+def calculate_ssim(img1, img2):
+    """
+    Calculate SSIM between two images
+    Args:
+        img1, img2: Tensor images in range [0, 1] with shape (C, H, W)
+    Returns:
+        SSIM value
+    """
+    # Convert tensors to numpy arrays
+    img1_np = img1.cpu().numpy()
+    img2_np = img2.cpu().numpy()
+    
+    # Convert from (C, H, W) to (H, W, C) for skimage
+    if img1_np.shape[0] == 3:  # RGB
+        img1_np = np.transpose(img1_np, (1, 2, 0))
+        img2_np = np.transpose(img2_np, (1, 2, 0))
+        # Use multichannel=True for RGB images
+        return ssim(img1_np, img2_np, multichannel=True, data_range=1.0)
+    else:  # Grayscale
+        img1_np = img1_np.squeeze()
+        img2_np = img2_np.squeeze()
+        return ssim(img1_np, img2_np, data_range=1.0)
 
 def reverse_diffusion_sample(model, lr_latent, T, betas, device):
     """Reverse diffusion to generate HR from LR"""
@@ -264,42 +288,56 @@ def visualize_results(lr_images, hr_images, generated_images, bicubic_images, nu
     if num_samples == 1:
         axes = axes.reshape(4, 1)
     
-    # Calculate and print PSNR values
-    print("\n=== PSNR Results ===")
+    # Calculate and print PSNR and SSIM values
+    print("\n=== PSNR and SSIM Results ===")
     bicubic_psnrs = []
     diffusion_psnrs = []
+    bicubic_ssims = []
+    diffusion_ssims = []
     
     for i in range(num_samples):
         # Calculate PSNR for each image
         bicubic_psnr = calculate_psnr(bicubic_norm[i], hr_norm[i])
         diffusion_psnr = calculate_psnr(gen_norm[i], hr_norm[i])
         
+        # Calculate SSIM for each image
+        bicubic_ssim = calculate_ssim(bicubic_norm[i], hr_norm[i])
+        diffusion_ssim = calculate_ssim(gen_norm[i], hr_norm[i])
+        
         bicubic_psnrs.append(bicubic_psnr)
         diffusion_psnrs.append(diffusion_psnr)
+        bicubic_ssims.append(bicubic_ssim)
+        diffusion_ssims.append(diffusion_ssim)
         
-        print(f"Image {i+1}: Bicubic = {bicubic_psnr:.2f} dB, Diffusion = {diffusion_psnr:.2f} dB")
+        print(f"Image {i+1}: Bicubic PSNR = {bicubic_psnr:.2f} dB, SSIM = {bicubic_ssim:.4f}")
+        print(f"         Diffusion PSNR = {diffusion_psnr:.2f} dB, SSIM = {diffusion_ssim:.4f}")
         
-        # Plot images with PSNR in titles
+        # Plot images with PSNR and SSIM in titles
         axes[0, i].imshow(lr_np[i], cmap='gray' if lr_np[i].shape[-1] == 1 else None)
         axes[0, i].set_title(f'LR Input (64x64)')
         axes[0, i].axis('off')
         
         axes[1, i].imshow(bicubic_np[i], cmap='gray' if bicubic_np[i].shape[-1] == 1 else None)
-        axes[1, i].set_title(f'Bicubic Upsampling\nPSNR: {bicubic_psnr:.2f} dB')
+        axes[1, i].set_title(f'Bicubic Upsampling\nPSNR: {bicubic_psnr:.2f} dB, SSIM: {bicubic_ssim:.3f}')
         axes[1, i].axis('off')
         
         axes[2, i].imshow(generated_np[i], cmap='gray' if generated_np[i].shape[-1] == 1 else None)
-        axes[2, i].set_title(f'Generated HR (Diffusion)\nPSNR: {diffusion_psnr:.2f} dB')
+        axes[2, i].set_title(f'Generated HR (Diffusion)\nPSNR: {diffusion_psnr:.2f} dB, SSIM: {diffusion_ssim:.3f}')
         axes[2, i].axis('off')
         
         axes[3, i].imshow(hr_np[i], cmap='gray' if hr_np[i].shape[-1] == 1 else None)
         axes[3, i].set_title(f'Ground Truth HR (256x256)')
         axes[3, i].axis('off')
     
-    # Print average PSNR
-    avg_bicubic = np.mean(bicubic_psnrs)
-    avg_diffusion = np.mean(diffusion_psnrs)
-    print(f"\nAverage PSNR - Bicubic: {avg_bicubic:.2f} dB, Diffusion: {avg_diffusion:.2f} dB")
+    # Print average PSNR and SSIM
+    avg_bicubic_psnr = np.mean(bicubic_psnrs)
+    avg_diffusion_psnr = np.mean(diffusion_psnrs)
+    avg_bicubic_ssim = np.mean(bicubic_ssims)
+    avg_diffusion_ssim = np.mean(diffusion_ssims)
+    
+    print(f"\nAverage Results:")
+    print(f"Bicubic:   PSNR = {avg_bicubic_psnr:.2f} dB, SSIM = {avg_bicubic_ssim:.4f}")
+    print(f"Diffusion: PSNR = {avg_diffusion_psnr:.2f} dB, SSIM = {avg_diffusion_ssim:.4f}")
     
     plt.tight_layout()
     plt.savefig('super_resolution_results.png', dpi=150, bbox_inches='tight')
