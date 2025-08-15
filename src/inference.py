@@ -174,8 +174,8 @@ def generate_super_resolution(model_path, data_dir, trt_path="None", use_trt=Fal
     
     if data_dir == "None":
         # Load specific LR and HR images
-        hr_image_path = "/home/nazmus/Desktop/EdgeDiff SR/image-upscaler/src/Data/HR_256/00000001_000 (1).png"
-        lr_image_path = "/home/nazmus/Desktop/EdgeDiff SR/image-upscaler/src/Data/LR_64/00000001_000.png"
+        hr_image_path = "/home/nazmus/Desktop/EdgeDiff SR/image-upscaler/src/Data/HR_256/00000090_004.png"
+        lr_image_path = "/home/nazmus/Desktop/EdgeDiff SR/image-upscaler/src/Data/LR_64/00000090_004.png"
 
         # Open and convert to RGB
         lr_image = Image.open(lr_image_path).convert("RGB")
